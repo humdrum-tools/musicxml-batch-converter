@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<script src="https://verovio-script.humdrum.org/scripts/verovio-toolkit-wasm.js"></script>
+	<title>Batch MusicXML to Humdrum converter</title>
+</head>
+
+<body>
+
+<h1>MusicXML to Humdrum batch converter</h1>
+<p> Click on the following button to select multiple MusicXML files.
+The files must be uncompressed (.xml or .musicxml, not .mxl).
+</p>
+
+<p>
+<button class="multiple" type="button">Load files</button>
+</p>
+
+<p>
+Files will be saved the the Web browser download folder.
+</p>
+
+<style>
+
+:root {
+  color-scheme: dark light;
+}
+
+html {
+  box-sizing: border-box;
+}
+
+*, *:before, *:after {
+  box-sizing: inherit;
+}
+
+body {
+  margin: 1rem;
+  font-family: system-ui, sans-serif;
+}
+
+button {
+  margin: 1rem;
+}
+
+</style>
+
+<script>
+
+let tk;
+
+document.addEventListener("DOMContentLoaded", (event) => {
+	verovio.module.onRuntimeInitialized = () => {
+		tk = new verovio.toolkit();
+		console.warn("Verovio toolkit initialized");
+	}
+});
+
+let pickerOptions = {
+  types: [
+    {
+      description: "MusicXML",
+      accept: {
+        "text/xml": [".xml", ".musicxml"],
+      },
+    },
+  ],
+  excludeAcceptAllOption: true,
+  multiple: true
+};
+
+const buttonMultiple = document.querySelector('button.multiple');
+
+const openFileOrFiles = async (multiple = false) => {
+  // Feature detection. The API needs to be supported
+  // and the app not run in an iframe.
+  const supportsFileSystemAccess = "showOpenFilePicker" in window &&
+	 (() => {
+		try {
+		  return window.self === window.top;
+		} catch {
+		  return false;
+		}
+	 })();
+
+  // If the File System Access API is supported…
+  if (supportsFileSystemAccess) {
+	 let fileOrFiles = undefined;
+	 try {
+		// Show the file picker, optionally allowing multiple files.
+		fileOrFiles = await showOpenFilePicker(pickerOptions);
+		if (!multiple) {
+		  // Only one file is requested.
+		  fileOrFiles = fileOrFiles[0];
+		}
+	 } catch (err) {
+		// Fail silently if the user has simply canceled the dialog.
+		if (err.name !== 'AbortError') {
+		  console.error(err.name, err.message);
+		}
+	 }
+	 return fileOrFiles;
+  }
+  // Fallback if the File System Access API is not supported.
+  return new Promise((resolve) => {
+	 // Append a new `<input type="file" multiple? />` and hide it.
+	 const input = document.createElement('input');
+	 input.style.display = 'none';
+	 input.type = 'file';
+	 document.body.append(input);
+	 if (multiple) {
+		input.multiple = true;
+	 }
+	 // The `change` event fires when the user interacts with the dialog.
+	 input.addEventListener('change', () => {
+		// Remove the `<input type="file" multiple? />` again from the DOM.
+		input.remove();
+		// If no files were selected, return.
+		if (!input.files) {
+		  return;
+		}
+		// Return all files or just one file.
+		resolve(multiple ? input.files : input.files[0]);
+	 });
+	 // Show the picker.
+	 if ('showPicker' in HTMLInputElement.prototype) {
+		input.showPicker();
+	 } else {
+		input.click();
+	 }
+  });
+};
+
+
+buttonMultiple.addEventListener('click', async () => {
+	const files = await openFileOrFiles(true);
+	if (!files) {
+		return;
+	}
+	for (let i=0; i<files.length; i++) {
+		let file = await files[i].getFile();
+		let name = files[i].name;
+		let contents = await readFileAsync(file);
+		convertFile(name, contents);
+	}
+});
+
+function convertFile(name, contents) {
+	if (tk) {
+		console.error("INPUT", contents);
+		tk.renderData(contents, {inputFrom: "musicxml-hum", outputTo: "humdrum"});
+		let output = tk.getHumdrum();
+		console.warn("OUTPUT", output);
+		let outputName = name.replace(/\.(music)?xml$/, ".krn");
+		saveToFile(outputName, output);
+	} else {
+		processFileContents(name, contents);
+	}
+}
+
+
+function saveToFile(filename, contents) {
+  const blob = new Blob([contents], { type: "text/plain" });
+  const anchorElement = document.createElement("a");
+  anchorElement.href = URL.createObjectURL(blob);
+  anchorElement.download = filename;
+  anchorElement.click();
+  URL.revokeObjectURL(anchorElement.href);
+}
+
+
+function readFileAsync(file) {
+  return new Promise((resolve, reject) => {
+    let reader = new FileReader();
+    reader.onload = () => {
+      resolve(reader.result);
+    };
+    reader.onerror = reject;
+    reader.readAsText(file);
+  })
+}
+
+
+</script>
+
+  </body>
+</html>
+
+
+
